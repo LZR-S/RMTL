@@ -30,6 +30,8 @@ SL run begin here
 def get_dataset(name, path):
     if 'rt' in name:  # 当前只支持一个数据集
         return RetailRocketRLDataset(path)
+    elif 'kuai' in name:
+        return KuaiRLDataset(path)
     else:
         raise ValueError('unknown dataset name: ' + name)
 
@@ -68,7 +70,7 @@ def sltrain(model, optimizer, data_loader, criterion, device, polisher=None, log
     total_loss = 0
     epoch_loss = []
     loader = tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)
-    for i, (categorical_fields, numerical_fields, labels) in enumerate(loader):
+    for i, (_, categorical_fields, numerical_fields, labels) in enumerate(loader):
         categorical_fields, numerical_fields, labels = categorical_fields.to(device), numerical_fields.to(device), labels.to(device)
         y = model(categorical_fields, numerical_fields)
         if polisher is not None:
@@ -93,10 +95,12 @@ def sltrain(model, optimizer, data_loader, criterion, device, polisher=None, log
 def sltest(model, data_loader, task_num, device):
     model.eval()
     labels_dict, predicts_dict, loss_dict = {}, {}, {}
+    sessions = []
     for i in range(task_num):
         labels_dict[i], predicts_dict[i], loss_dict[i] = list(), list(), list()
     with torch.no_grad():
-        for categorical_fields, numerical_fields, labels in tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0):
+        for session_id, categorical_fields, numerical_fields, labels in tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0):
+            sessions.extend(session_id.tolist())
             categorical_fields, numerical_fields, labels = categorical_fields.to(device), numerical_fields.to(device), labels.to(device)
             y = model(categorical_fields, numerical_fields)
             for i in range(task_num):
@@ -107,8 +111,12 @@ def sltest(model, data_loader, task_num, device):
     for i in range(task_num):
         auc_results.append(roc_auc_score(labels_dict[i], predicts_dict[i]))
         loss_results.append(np.array(loss_dict[i]).mean())
-    return auc_results, loss_results
 
+    # compute session logloss
+    loss_dict["session"] = sessions
+    loss_df = pd.DataFrame(loss_dict)
+    s_avg = loss_df.groupby("session").mean().mean().tolist()
+    return auc_results, loss_results, s_avg
 
 def slpred(model, data_loader, task_num, device):
     model.eval()
