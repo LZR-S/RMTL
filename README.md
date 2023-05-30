@@ -1,4 +1,6 @@
 # RL-MTL
+Code for RetailRocket Dataset. Please convert data into MDP format.
+
 ## Model Code
 + layers: stores common network structures
   + critic: critic network
